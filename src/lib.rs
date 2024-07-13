@@ -1,14 +1,31 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+use std::collections::HashMap;
+
+use tokenizer::tokenize;
+
+mod tokenizer;
+
+/// Representation of possible JSON values.
+pub enum Value {
+    /// literal 'null' value
+    Null,
+
+    /// literal 'true' or 'false'
+    Boolean(bool),
+
+    /// value within doubel quotes "..."
+    String(String),
+
+    /// numbers stored as 64-bit floating point
+    Number(f64),
+
+    /// Zero or more JSON values
+    Array(Vec<Value>),
+
+    /// JSON value identified by a String key
+    Object(HashMap<String, Value>),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn parse(input: String) -> Result<(), ()> {
+    let _ = tokenize(input).unwrap();
+    Ok(())
 }
