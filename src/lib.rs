@@ -2,20 +2,22 @@ use std::collections::HashMap;
 
 use tokenizer::tokenize;
 
+mod parser;
 mod tokenizer;
 
 /// Representation of possible JSON values.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    /// literal 'null' value
+    /// Literal 'null' value
     Null,
 
-    /// literal 'true' or 'false'
+    /// Literal 'true' or 'false'
     Boolean(bool),
 
-    /// value within doubel quotes "..."
+    /// Value within doubel quotes "..."
     String(String),
 
-    /// numbers stored as 64-bit floating point
+    /// Numbers stored as 64-bit floating point
     Number(f64),
 
     /// Zero or more JSON values
