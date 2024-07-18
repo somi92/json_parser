@@ -1,7 +1,14 @@
 use crate::{tokenizer::Token, Value};
 
 #[derive(Debug, PartialEq)]
-enum TokenParseError {}
+enum TokenParseError {
+    /// An escape sequence was started without 4 hexadecimal digits afterwards
+    UnfinishedEscape,
+    /// A character in an escape sequence was not valid hexadecimal
+    InvalidHexValue,
+    /// Invalid unicode value
+    InvalidCodePointValue,
+}
 
 type ParseResult = Result<Value, TokenParseError>;
 
@@ -36,7 +43,19 @@ fn parse_string(input: &str) -> ParseResult {
                 't' => output.push('\t'),
                 'b' => output.push('\u{8}'),
                 'f' => output.push('\u{12}'),
-                'u' => todo!("implement hex code escapes"),
+                'u' => {
+                    let mut sum = 0;
+                    for i in 0..4 {
+                        let next_char = chars.next().ok_or(TokenParseError::UnfinishedEscape)?;
+                        let digit = next_char
+                            .to_digit(16)
+                            .ok_or(TokenParseError::InvalidHexValue)?;
+                        sum += (16u32).pow(3 - i) * digit;
+                    }
+                    let unescaped_char =
+                        char::from_u32(sum).ok_or(TokenParseError::InvalidCodePointValue)?;
+                    output.push(unescaped_char);
+                }
                 _ => output.push(next_char),
             }
             in_escape_mode = false;
@@ -137,6 +156,31 @@ mod tests {
     fn all_the_simple_escapes() {
         let input = [Token::string(r#"\"\/\\\b\f\n\r\t"#)];
         let expected = Value::String(String::from("\"/\\\u{8}\u{12}\n\r\t"));
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_string_with_unescaped_emoji() {
+        let input = [Token::string("hello 💩 world")];
+        let expected = Value::String(String::from("hello 💩 world"));
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_string_with_unnecessarily_escaped_emoji() {
+        let input = [Token::string(r#"hello \💩 world"#)];
+        let expected = Value::String(String::from("hello 💩 world"));
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    #[ignore = "decoding of UTF-16 surrogate pairs is not implemented"]
+    fn parses_string_with_escaped_surrogate_pairs_for_an_emoji() {
+        let input = [Token::string(r#"hello\uD83C\uDF3Cworld"#)];
+        let expected = Value::String(String::from("hello🌼world"));
 
         assert_parse_tokens(&input, expected);
     }
