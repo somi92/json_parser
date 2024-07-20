@@ -1,17 +1,30 @@
+use std::collections::HashMap;
+
 use crate::{tokenizer::Token, Value};
 
 #[derive(Debug, PartialEq)]
 pub enum TokenParseError {
     /// An escape sequence was started without 4 hexadecimal digits afterwards
     UnfinishedEscape,
+
     /// A character in an escape sequence was not valid hexadecimal
     InvalidHexValue,
+
     /// Invalid unicode value
     InvalidCodePointValue,
+
     /// Value was expected but not found
     ExpectedValue,
+
+    /// Property name was expected but not found
+    ExpectedProperty,
+
     /// Comma was expected but not found
     ExpectedComma,
+
+    /// Colon was expected but not found
+    ExpectedColon,
+
     /// Trailing comma found
     TrailingComma,
 }
@@ -35,17 +48,20 @@ pub fn parse_tokens(tokens: &[Token], index: &mut usize) -> ParseResult {
         Token::Number(number) => Ok(Value::Number(*number)),
         Token::String(string) => parse_string(string),
         Token::LeftBracket => parse_array(tokens, index),
-        Token::LeftBrace => todo!(),
+        Token::LeftBrace => parse_object(tokens, index),
         _ => Err(TokenParseError::ExpectedValue),
     }
 }
 
 fn parse_string(input: &str) -> ParseResult {
+    let output = unescape_string(input)?;
+    Ok(Value::String(output))
+}
+
+fn unescape_string(input: &str) -> Result<String, TokenParseError> {
     let mut output = String::with_capacity(input.len());
     let mut in_escape_mode = false;
-
     let mut chars = input.chars();
-
     while let Some(next_char) = chars.next() {
         if in_escape_mode {
             match next_char {
@@ -78,8 +94,7 @@ fn parse_string(input: &str) -> ParseResult {
             output.push(next_char);
         }
     }
-
-    Ok(Value::String(output))
+    Ok(output)
 }
 
 fn parse_array(tokens: &[Token], index: &mut usize) -> ParseResult {
@@ -106,6 +121,41 @@ fn parse_array(tokens: &[Token], index: &mut usize) -> ParseResult {
     *index += 1;
 
     Ok(Value::Array(output))
+}
+
+fn parse_object(tokens: &[Token], index: &mut usize) -> ParseResult {
+    let mut output: HashMap<String, Value> = HashMap::new();
+
+    loop {
+        *index += 1;
+
+        if tokens[*index] == Token::RightBrace {
+            break;
+        }
+
+        if let Token::String(prop) = &tokens[*index] {
+            *index += 1;
+
+            if Token::Colon == tokens[*index] {
+                *index += 1;
+
+                let key = unescape_string(prop)?;
+                let value = parse_tokens(tokens, index)?;
+
+                output.insert(key, value);
+            }
+
+            match &tokens[*index] {
+                Token::Comma => {}
+                Token::RightBrace => break,
+                _ => return Err(TokenParseError::ExpectedComma),
+            }
+        } else {
+            return Err(TokenParseError::ExpectedProperty);
+        }
+    }
+
+    Ok(Value::Object(output))
 }
 
 #[cfg(test)]
@@ -306,5 +356,41 @@ mod tests {
         let expected = TokenParseError::TrailingComma;
 
         assert_error(&input, expected);
+    }
+
+    #[test]
+    fn parses_empty_object() {
+        let input = [Token::LeftBrace, Token::RightBrace];
+        let expected = Value::object([]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_object_one_string_value() {
+        let input = [
+            Token::LeftBrace,
+            Token::string("name"),
+            Token::Colon,
+            Token::string("davimiku"),
+            Token::RightBrace,
+        ];
+        let expected = Value::object([("name", Value::string("davimiku"))]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_object_escaped_key() {
+        let input = [
+            Token::LeftBrace,
+            Token::string(r#"\u540D\u524D"#),
+            Token::Colon,
+            Token::string("davimiku"),
+            Token::RightBrace,
+        ];
+        let expected = Value::object([("名前", Value::string("davimiku"))]);
+
+        assert_parse_tokens(&input, expected);
     }
 }

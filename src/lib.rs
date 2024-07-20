@@ -27,6 +27,19 @@ pub enum Value {
     Object(HashMap<String, Value>),
 }
 
+#[cfg(test)]
+impl Value {
+    pub(crate) fn object<const N: usize>(pairs: [(&'static str, Self); N]) -> Self {
+        let owned_pairs = pairs.map(|(key, value)| (String::from(key), value));
+        let map = HashMap::from(owned_pairs);
+        Self::Object(map)
+    }
+
+    pub(crate) fn string(s: &str) -> Self {
+        Self::String(String::from(s))
+    }
+}
+
 pub fn parse(input: String) -> Result<(), ()> {
     let _ = tokenize(input).unwrap();
     Ok(())
