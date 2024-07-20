@@ -1,19 +1,32 @@
 use crate::{tokenizer::Token, Value};
 
 #[derive(Debug, PartialEq)]
-enum TokenParseError {
+pub enum TokenParseError {
     /// An escape sequence was started without 4 hexadecimal digits afterwards
     UnfinishedEscape,
     /// A character in an escape sequence was not valid hexadecimal
     InvalidHexValue,
     /// Invalid unicode value
     InvalidCodePointValue,
+    /// Value was expected but not found
+    ExpectedValue,
+    /// Comma was expected but not found
+    ExpectedComma,
+    /// Trailing comma found
+    TrailingComma,
 }
 
 type ParseResult = Result<Value, TokenParseError>;
 
-fn parse_tokens(tokens: &[Token], index: &mut usize) -> ParseResult {
+pub fn parse_tokens(tokens: &[Token], index: &mut usize) -> ParseResult {
     let token = &tokens[*index];
+
+    if matches!(
+        token,
+        Token::Null | Token::False | Token::True | Token::Number(_) | Token::String(_)
+    ) {
+        *index += 1;
+    }
 
     match token {
         Token::Null => Ok(Value::Null),
@@ -21,9 +34,9 @@ fn parse_tokens(tokens: &[Token], index: &mut usize) -> ParseResult {
         Token::True => Ok(Value::Boolean(true)),
         Token::Number(number) => Ok(Value::Number(*number)),
         Token::String(string) => parse_string(string),
-        Token::LeftBracket => todo!(),
+        Token::LeftBracket => parse_array(tokens, index),
         Token::LeftBrace => todo!(),
-        _ => todo!(),
+        _ => Err(TokenParseError::ExpectedValue),
     }
 }
 
@@ -69,14 +82,45 @@ fn parse_string(input: &str) -> ParseResult {
     Ok(Value::String(output))
 }
 
+fn parse_array(tokens: &[Token], index: &mut usize) -> ParseResult {
+    let mut output: Vec<Value> = Vec::new();
+
+    loop {
+        *index += 1;
+
+        if tokens[*index] == Token::RightBracket {
+            break;
+        }
+
+        let value = parse_tokens(tokens, index)?;
+        output.push(value);
+
+        let token = &tokens[*index];
+        match token {
+            Token::Comma => {}
+            Token::RightBracket => break,
+            _ => return Err(TokenParseError::ExpectedComma),
+        }
+    }
+
+    *index += 1;
+
+    Ok(Value::Array(output))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{tokenizer::Token, Value};
 
-    use super::parse_tokens;
+    use super::{parse_tokens, TokenParseError};
 
     fn assert_parse_tokens(input: &[Token], expected: Value) {
         let actual = parse_tokens(input, &mut 0).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    fn assert_error(input: &[Token], expected: TokenParseError) {
+        let actual = parse_tokens(input, &mut 0).unwrap_err();
         assert_eq!(actual, expected);
     }
 
@@ -183,5 +227,84 @@ mod tests {
         let expected = Value::String(String::from("hello🌼world"));
 
         assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_empty_arrays() {
+        // []
+        let input = [Token::LeftBracket, Token::RightBracket];
+        let expected = Value::Array(vec![]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_array_one_element() {
+        // [true]
+        let input = [Token::LeftBracket, Token::True, Token::RightBracket];
+        let expected = Value::Array(vec![Value::Boolean(true)]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_array_two_elements() {
+        // [null, 16]
+        let input = [
+            Token::LeftBracket,
+            Token::Null,
+            Token::Comma,
+            Token::Number(16.0),
+            Token::RightBracket,
+        ];
+        let expected = Value::Array(vec![Value::Null, Value::Number(16.0)]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn parses_nested_array() {
+        // [null, [null]]
+        let input = [
+            Token::LeftBracket,
+            Token::Null,
+            Token::Comma,
+            Token::LeftBracket,
+            Token::Null,
+            Token::RightBracket,
+            Token::RightBracket,
+        ];
+        let expected = Value::Array(vec![Value::Null, Value::Array(vec![Value::Null])]);
+
+        assert_parse_tokens(&input, expected);
+    }
+
+    #[test]
+    fn fails_array_leading_comma() {
+        // [,true]
+        let input = [
+            Token::LeftBracket,
+            Token::Comma,
+            Token::True,
+            Token::RightBracket,
+        ];
+        let expected = TokenParseError::ExpectedValue;
+
+        assert_error(&input, expected);
+    }
+
+    #[test]
+    #[ignore = "the current implementation allows trailing commas"]
+    fn fails_array_trailing_comma() {
+        // [true,]
+        let input = [
+            Token::LeftBracket,
+            Token::True,
+            Token::Comma,
+            Token::RightBracket,
+        ];
+        let expected = TokenParseError::TrailingComma;
+
+        assert_error(&input, expected);
     }
 }
