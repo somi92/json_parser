@@ -1,9 +1,16 @@
 use std::collections::HashMap;
 
-use tokenizer::tokenize;
+use parser::{parse_tokens, TokenParseError};
+use tokenizer::{tokenize, TokenizeError};
 
 mod parser;
 mod tokenizer;
+
+pub fn parse(input: String) -> Result<Value, ParseError> {
+    let tokens = tokenize(input)?;
+    let value = parse_tokens(&tokens, &mut 0)?;
+    Ok(value)
+}
 
 /// Representation of possible JSON values.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +34,12 @@ pub enum Value {
     Object(HashMap<String, Value>),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ParseError {
+    TokenizeError(TokenizeError),
+    ParseError(TokenParseError),
+}
+
 #[cfg(test)]
 impl Value {
     pub(crate) fn object<const N: usize>(pairs: [(&'static str, Self); N]) -> Self {
@@ -40,7 +53,14 @@ impl Value {
     }
 }
 
-pub fn parse(input: String) -> Result<(), ()> {
-    let _ = tokenize(input).unwrap();
-    Ok(())
+impl From<TokenParseError> for ParseError {
+    fn from(err: TokenParseError) -> Self {
+        Self::ParseError(err)
+    }
+}
+
+impl From<TokenizeError> for ParseError {
+    fn from(err: TokenizeError) -> Self {
+        Self::TokenizeError(err)
+    }
 }
